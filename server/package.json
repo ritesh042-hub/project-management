@@ -20,6 +20,7 @@
     "dotenv": "^17.2.4",
     "express": "^5.2.1",
     "inngest": "^3.52.0",
+    "nodemailer": "^8.0.1",
     "prisma": "^7.4.0"
   },
   "devDependencies": {

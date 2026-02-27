@@ -1,5 +1,6 @@
 import { Inngest } from "inngest";
-import { prisma } from "../configs/prisma.js"
+import  prisma  from "../configs/prisma.js"
+import sendEmail from "../configs/nondemailer.js";
 
 // Create a client to send and receive events
 export const inngest = new Inngest({ id: "project-management" });
@@ -123,8 +124,81 @@ const syncWorkspaceMemberCreation=inngest.createFunction(
     }
 )
 
+// Inngest Function to sendEmail on task creation
+
+const sendTaskAssignmentEmail = inngest.createFunction(
+    { id: "send-task-assignment-mail" },
+    { event: "app/task.assigned" },
+    async ({ event, step }) => {
+        const task = await prisma.task.findUnique({
+            where: { id: taskId },
+            include: { assignee: true, project: true }
+        })
+        
+        // First email body - Task Assignment
+        await sendEmail({
+            to: task.assignee.email,
+            subject: `New Task Assignment in ${task.project.name}`,
+            body: `
+                Hi ${task.assignee.name},
+                
+                You have been assigned a new task: "${task.title}"
+                
+                Description: ${task.description || 'No description provided'}
+                Due Date: ${new Date(task.due_date).toLocaleDateString()}
+                Project: ${task.project.name}
+                
+                <a href="${origin}">View Task</a>
+                
+                Thanks,
+                Project Management Team
+            `
+        })
+
+        if (new Date(task.due_date).toLocaleDateString() != new Date().toDateString()) {
+            await step.sleepUntil('wait-for-the-due-date', new Date(task.due_date))
+
+            await step.run('check-if-task-is-completed', async () => {
+                const task = await prisma.task.findUnique({
+                    where: { id: taskId },
+                    include: { assignee: true, project: true }
+                })
+                if (!task) return;
+
+                if (task.status != "DONE") {
+                    await step.run('send-task-reminder-mail', async () => {
+                        // Second email body - Reminder
+                        await sendEmail({
+                            to: task.assignee.email,
+                            subject: `⏰ Reminder: Task Due Today - ${task.project.name}`,
+                            body: `
+                                Hi ${task.assignee.name},
+                                
+                                This is a reminder that your task is due today!
+                                
+                                Task: "${task.title}"
+                                Description: ${task.description || 'No description provided'}
+                                Project: ${task.project.name}
+                                Due Date: ${new Date(task.due_date).toLocaleDateString()}
+                                
+                                Please complete it as soon as possible.
+                                
+                                <a href="${origin}">View Task</a>
+                                
+                                Thanks,
+                                Project Management Team
+                            `
+                        })
+                    })
+                }
+            })
+        }
+    }
+)
+
+
 
 
 
 // Create an empty array where we'll export future Inngest functions
-export const functions = [syncUserCreation,syncUserDeletion,syncUserUpdation,syncWorkspaceCreation,syncWorkspaceUpdation,syncWorkspaceDeletion,syncWorkspaceMemberCreation];
+export const functions = [syncUserCreation,syncUserDeletion,syncUserUpdation,syncWorkspaceCreation,syncWorkspaceUpdation,syncWorkspaceDeletion,syncWorkspaceMemberCreation,sendTaskAssignmentEmail];
